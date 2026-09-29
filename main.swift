@@ -484,6 +484,15 @@ struct SettingsView: View {
                 }
             }
             Section {
+                HStack {
+                    Text(tr("Contador \(version)", "Contador \(version)")).foregroundStyle(.secondary)
+                    Spacer()
+                    // sair sem depender do ícone da barra (ele some atrás do notch quando a barra lota)
+                    Button(tr("Sair do Contador", "Quit Contador")) { NSApp.terminate(nil) }
+                        .keyboardShortcut("q")
+                }
+            }
+            Section {
                 Toggle(tr("Abrir ao iniciar o Mac", "Open at login"), isOn: $login)
                     .onChange(of: login) { _, on in
                         try? on ? SMAppService.mainApp.register() : SMAppService.mainApp.unregister()
