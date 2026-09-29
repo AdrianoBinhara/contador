@@ -17,8 +17,8 @@ cat > Contador.app/Contents/Info.plist <<P
 <key>CFBundleIconFile</key><string>Icon</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleName</key><string>Contador</string>
-<key>CFBundleShortVersionString</key><string>1.0</string>
-<key>CFBundleVersion</key><string>1</string>
+<key>CFBundleShortVersionString</key><string>1.1</string>
+<key>CFBundleVersion</key><string>2</string>
 <key>LSMinimumSystemVersion</key><string>14.0</string>
 <key>LSUIElement</key><true/>
 </dict></plist>
