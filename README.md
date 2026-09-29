@@ -15,7 +15,7 @@ curl -fsSL https://raw.githubusercontent.com/AdrianoBinhara/contador/main/instal
 
 Pronto. A gota nasce no centro da tela e escorre até a borda.
 
-Prefere baixar? Pegue o `Contador.zip` em [Releases](https://github.com/AdrianoBinhara/contador/releases/latest), descompacte e arraste pra Aplicativos. Se o macOS bloquear na primeira vez: Ajustes do Sistema, Privacidade e Segurança, "Abrir Mesmo Assim".
+Prefere baixar? Pegue o `Contador.zip` em [Releases](https://github.com/AdrianoBinhara/contador/releases/latest), descompacte e arraste pra Aplicativos. O app é assinado e notarizado pela Apple, abre sem aviso.
 
 **Requisitos:** macOS 14 ou mais novo, Apple Silicon ou Intel. O efeito de vidro líquido aparece no macOS 26; nas versões anteriores a gota usa vidro fosco.
 
