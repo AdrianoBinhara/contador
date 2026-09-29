@@ -15,6 +15,7 @@ cat > Contador.app/Contents/Info.plist <<P
 <key>CFBundleExecutable</key><string>Contador</string>
 <key>CFBundleIdentifier</key><string>com.appsolutely.contador</string>
 <key>CFBundleIconFile</key><string>Icon</string>
+<key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleName</key><string>Contador</string>
 <key>CFBundleShortVersionString</key><string>1.0</string>
 <key>CFBundleVersion</key><string>1</string>
