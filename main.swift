@@ -26,8 +26,11 @@ func gradient(_ i: Int) -> LinearGradient {
 // Poses da gota: fechada (quase só o menisco) e aberta (língua nas laterais, gota achatada no topo/base).
 let closedR: CGFloat = 15, closedD: CGFloat = 8, closedF: CGFloat = 11
 struct Pose { let r, d, f, len: CGFloat }
-let sideOpen = Pose(r: 47, d: 262, f: 18, len: 0)
-let flatOpen = Pose(r: 44, d: 56, f: 18, len: 220)
+// quem usa Claude Code ou Codex ganha uma linha a mais com o limite restante
+let home = FileManager.default.homeDirectoryForCurrentUser.path
+let usageRow: CGFloat = ["/.claude", "/.codex/sessions"].contains { FileManager.default.fileExists(atPath: home + $0) } ? 20 : 0
+let sideOpen = Pose(r: 47 + usageRow / 2, d: 262, f: 18, len: 0)
+let flatOpen = Pose(r: 44, d: 56 + usageRow, f: 18, len: 220)
 
 // Tudo é calculado num espaço canônico com a parede à direita (P fundo × A ao longo da parede)
 // e transformado pra borda real. Assim a mesma física serve pras 4 bordas.
@@ -108,7 +111,7 @@ enum Edge: Int {
         return Pose(r: 10, d: n.height + 5 - 10, f: 6, len: n.width + 8 - 20)
     }
     var open: Pose {
-        if self == .notch, let n = notchRect { return Pose(r: 24, d: n.height + 88 - 24, f: 10, len: max(n.width, 330) - 48) }
+        if self == .notch, let n = notchRect { return Pose(r: 24, d: n.height + 88 + usageRow - 24, f: 10, len: max(n.width, 330) - 48) }
         return isSide ? sideOpen : flatOpen
     }
     var size: CGSize { isSide ? CGSize(width: P, height: A) : CGSize(width: A, height: P) }
@@ -192,6 +195,85 @@ struct Segments: View {
     }
 }
 
+// Limite restante do Claude Code (sessão de 5h e semana) e do Codex (semana), em %.
+// Claude: token OAuth que o Claude Code guarda no Chaves (lido via `security`, sem pedir senha) → /api/oauth/usage.
+// Codex: último evento rate_limits das sessões em ~/.codex/sessions.
+final class Usage: ObservableObject {
+    static let shared = Usage()
+    @Published var claude: (session: Double, week: Double)?
+    @Published var codex: Double?
+    private init() {
+        guard usageRow > 0 else { return }
+        refresh()
+        Timer.scheduledTimer(withTimeInterval: 120, repeats: true) { [weak self] _ in self?.refresh() }
+    }
+    func refresh() {
+        Task.detached {
+            let c = await Usage.fetchClaude(), x = Usage.readCodex()
+            await MainActor.run {
+                if let c { self.claude = c } // falha de rede: mantém o último valor
+                if let x { self.codex = x }
+            }
+        }
+    }
+    static func fetchClaude() async -> (session: Double, week: Double)? {
+        let p = Process(), out = Pipe()
+        p.executableURL = URL(fileURLWithPath: "/usr/bin/security")
+        p.arguments = ["find-generic-password", "-s", "Claude Code-credentials", "-w"]
+        p.standardOutput = out
+        p.standardError = FileHandle.nullDevice
+        guard (try? p.run()) != nil else { return nil }
+        let creds = out.fileHandleForReading.readDataToEndOfFile()
+        p.waitUntilExit()
+        guard let j = try? JSONSerialization.jsonObject(with: creds) as? [String: Any],
+              let token = (j["claudeAiOauth"] as? [String: Any])?["accessToken"] as? String else { return nil }
+        var req = URLRequest(url: URL(string: "https://api.anthropic.com/api/oauth/usage")!)
+        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        req.setValue("oauth-2025-04-20", forHTTPHeaderField: "anthropic-beta")
+        guard let (data, _) = try? await URLSession.shared.data(for: req),
+              let u = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        func left(_ k: String) -> Double? { ((u[k] as? [String: Any])?["utilization"] as? Double).map { max(0, 100 - $0) } }
+        guard let s = left("five_hour"), let w = left("seven_day") else { return nil }
+        return (s, w)
+    }
+    static func readCodex() -> Double? {
+        let root = URL(fileURLWithPath: home + "/.codex/sessions")
+        // ponytail: varre todas as sessões a cada 2 min; nomes têm data, então ordem alfabética = cronológica
+        let files = (FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil)?.allObjects as? [URL] ?? [])
+            .filter { $0.pathExtension == "jsonl" }.sorted { $0.path > $1.path }
+        for f in files.prefix(5) {
+            guard let text = try? String(contentsOf: f, encoding: .utf8),
+                  let line = text.split(separator: "\n").last(where: { $0.contains("\"rate_limits\"") }),
+                  let j = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any],
+                  let limits = (j["payload"] as? [String: Any])?["rate_limits"] as? [String: Any],
+                  let primary = limits["primary"] as? [String: Any],
+                  let used = primary["used_percent"] as? Double else { continue }
+            if let reset = primary["resets_at"] as? Double, reset < Date().timeIntervalSince1970 { return 100 } // já renovou
+            return max(0, 100 - used)
+        }
+        return nil
+    }
+}
+
+struct UsageLine: View {
+    @ObservedObject var usage = Usage.shared
+    func pct(_ v: Double) -> Text { Text("\(Int(v.rounded()))%").foregroundColor(v < 20 ? .orange : .primary) }
+    var body: some View {
+        HStack(spacing: 4) {
+            if let c = usage.claude {
+                Text("Claude"); Text("5h").foregroundStyle(.tertiary); pct(c.session)
+                Text(tr("sem", "wk")).foregroundStyle(.tertiary); pct(c.week)
+            }
+            Spacer()
+            if let x = usage.codex { Text("Codex"); Text(tr("sem", "wk")).foregroundStyle(.tertiary); pct(x) }
+        }
+        .font(.system(size: 10.5, weight: .medium, design: .rounded))
+        .monospacedDigit()
+        .foregroundStyle(.secondary)
+        .help(tr("Limite restante", "Remaining limit"))
+    }
+}
+
 struct Details: View {
     let t: Tick, title: String, theme: Int
     var body: some View {
@@ -228,6 +310,7 @@ struct Details: View {
             }
             .font(.system(size: 10.5, weight: .medium, design: .rounded))
             .foregroundStyle(.secondary)
+            if usageRow > 0 { UsageLine() }
         }
     }
 }
@@ -328,7 +411,7 @@ struct Widget: View {
         let drop = liquid.drop, edge = liquid.edge, t = edge.transform
         let e = min(max((drop.d - edge.closed.d) / (edge.open.d - edge.closed.d), 0), 1) // 0 = gota, 1 = aberta
         let shape = EdgeDrop(drop: drop, edge: edge)
-        let depth: CGFloat = edge == .notch ? (notchRect?.height ?? 0) / 2 + 48 : edge.isSide ? 150 : 52 // centro do texto a partir da parede
+        let depth: CGFloat = edge == .notch ? (notchRect?.height ?? 0) / 2 + 48 + usageRow / 2 : edge.isSide ? 150 : 52 + usageRow / 2 // centro do texto a partir da parede
         let center = CGPoint(x: P - depth, y: drop.cy).applying(t)
         let slide = CGPoint(x: 40 * (1 - e), y: 0).applying(CGAffineTransform(a: t.a, b: t.b, c: t.c, d: t.d, tx: 0, ty: 0))
         ZStack(alignment: .topLeading) {
